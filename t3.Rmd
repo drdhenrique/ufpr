@@ -1,0 +1,314 @@
+---
+title: "Trabalho 3"
+author: "Eduardo Henrique"
+date: "2024-04-26"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+# imports
+library(tidyverse)
+library(kknn)
+library(caret)
+```
+
+# Introdução
+
+O objetivo deste trabalho é o de apresentar as fronteiras de decisão, além de métricas de desempenho para o conjunto de dados 'wall robot navigation' utilizando o método knn. 
+
+# Dados
+
+### Obtenção dos dados
+
+```{r, message=FALSE}
+url <- "https://raw.githubusercontent.com/andersonara/datasets/master/wall-robot-navigation.csv"
+
+df <- read_csv2(url)
+
+df$X1 <- as.numeric(df$X1)
+df$X2 <- as.numeric(df$X2)
+
+# visualizando os dados
+cores <- c("blue", "red", "green", "orange")
+plot(df[,1:2],col=cores[df$Y])
+
+```
+
+### Separação em dados para treinamento e validação final
+
+Nessa etapa separo os dados de forma que 80 % serão utilizados para treinamento dos modelos e 20 % apenas para verificação final dos resultados.
+
+```{r}
+set.seed(31415)
+
+indice <- createDataPartition(df$Y, p = 0.2, list = FALSE)
+
+treino <- df[-indice,]
+teste_final <- df[indice,]
+
+par(mfrow=c(1,2))
+plot(treino[,1:2],col=cores[treino$Y], main = 'dados de treino')
+plot(teste_final[,1:2],col=cores[teste_final$Y], main = 'dados de teste')
+
+```
+
+# Metodologia
+
+Para esse projeto, com base no artigo 'An empirical comparasion of model validation techniques of defect prediction models', decidi fazer a comparação apenas entre os piores modelos descritos no artigo: holdout simples (50/50) e holdout simples (70/30). 
+
+Com os dados de teste já separados, precisamos então criar nosso modelinho para treinamento. Para tal, usaremos o pacote kknn. Os códigos completos estão no github com o link nas referências. 
+
+Aqui analisaremos apenas as medidas Acurácia, MCC e F1-score. Motivos? 
+
+### Holdout 50/50
+
+Faremos nosso modelo utilizando k = 5. 
+
+```{r, include = F}
+set.seed(31415)
+l <- sample(1:nrow(treino),0.5*nrow(treino))
+amostra.trein5050 <- treino[l,]
+amostra.teste <- treino[-l,]
+
+mod.2nn5050 <- kknn(Y ~ ., kernel="gaussian", k=5, 
+                train = amostra.trein5050, test = amostra.teste)
+
+yfit5050 <- round(fitted(mod.2nn5050),0)
+
+#Confusion Matrix
+CM <- table(yfit5050,amostra.teste$Y)
+
+ind.cm=combn(4,2)
+
+CM1=CM[ind.cm[,1],ind.cm[,1]]
+CM2=CM[ind.cm[,2],ind.cm[,2]]
+CM3=CM[ind.cm[,3],ind.cm[,3]]
+CM4=CM[ind.cm[,4],ind.cm[,4]]
+
+TP1=CM1[1,1]
+FP1=CM1[2,1]
+TN1=CM1[2,2]
+FN1=CM1[1,2]
+
+
+TP2=CM2[1,1]
+FP2=CM2[2,1]
+TN2=CM2[2,2]
+FN2=CM2[1,2]
+
+TP3=CM3[1,1]
+FP3=CM3[2,1]
+TN3=CM3[2,2]
+FN3=CM3[1,2]
+
+TP4=CM4[1,1]
+FP4=CM4[2,1]
+TN4=CM4[2,2]
+FN4=CM4[1,2]
+
+#ACC
+ACC <- sum(diag(CM))/sum(CM)
+
+#MCC
+MCC1 <- (TP1*TN1-FP1*FN1)/sqrt(exp(log(TP1+FP1) + log(TP1+FN1) + log(TN1+FP1) + log(TN1+FN1)))
+MCC2 <- (TP2*TN2-FP2*FN2)/sqrt(exp(log(TP2+FP2) + log(TP2+FN2) + log(TN2+FP2) + log(TN2+FN2)))
+MCC3 <- (TP3*TN3-FP3*FN3)/sqrt(exp(log(TP3+FP3) + log(TP3+FN3) + log(TN3+FP3) + log(TN3+FN3)))
+MCC4 <- (TP4*TN4-FP4*FN4)/sqrt(exp(log(TP4+FP4) + log(TP4+FN4) + log(TN4+FP4) + log(TN4+FN4)))
+
+MCC_macro=mean(MCC1,MCC2,MCC3, MCC4)
+
+MCC_micro=((TP1+TP2+TP3+TP4)*(TN1+TN2+TN3+TN4)-(FP1+FP2+FP3+FP4)*(FN1+FN2+FN3+FN4))/sqrt(exp(log(TP1+TP2+TP3+TP4+FP1+FP2+FP3+FP4)+log(TP1+TP2+TP3+TP4+FN1+FN2+FN3+FN4)+log(TN1+TN2+TN3+TN4+FP1+FP2+FP3+FP4)+log(TN1+TN2+TN3+TN4+FN1+FN2+FN3+FN4)))
+
+# Sensibilidade Macro
+Sensibilidade_macro <- (TP1/(TP1 + FN1)) + (TP2/(TP2 + FN2)) + (TP3/(TP3 + FN3)) + (TP4/(TP4 + FN4))
+Sensibilidade_macro <- Sensibilidade_macro / 4
+
+# Sensibilidade Micro
+Sensibilidade_micro <- (TP1 + TP2 + TP3 + TP4) / (TP1 + TP2 + TP3 + TP4 + FN1 + FN2 + FN3 + FN4)
+
+# Especificidade Macro
+Especificidade_macro <- ((TN1/(TN1 + FP1)) + (TN2/(TN2 + FP2)) + (TN3/(TN3 + FP3)) + (TN4/(TN4 + FP4)))/ 4
+
+
+# Especificidade Micro
+Especificidade_micro <- (TN1 + TN2 + TN3 + TN4) / (TN1 + TN2 + TN3 + TN4 + FP1 + FP2 + FP3 + FP4)
+
+# Acurácia Balanceada Macro
+Acuracia_balanceada_macro <- (Sensibilidade_macro + Especificidade_macro) / 2
+
+# Acurácia Balanceada Micro
+Acuracia_balanceada_micro <- (Sensibilidade_micro + Especificidade_micro) / 2
+
+# Precisão Macro
+Precisao_macro <- (TP1/(TP1 + FP1)) + (TP2/(TP2 + FP2)) + (TP3/(TP3 + FP3)) + (TP4/(TP4 + FP4))
+Precisao_macro <- Precisao_macro / 4
+
+# Precisão Micro
+Precisao_micro <- (TP1 + TP2 + TP3 + TP4) / (TP1 + TP2 + TP3 + TP4 + FP1 + FP2 + FP3 + FP4)
+
+# F1 Score Macro
+F1_macro <- (2 * Precisao_macro * Sensibilidade_macro) / (Precisao_macro + Sensibilidade_macro)
+
+# F1 Score Micro
+F1_micro <- (2 * Precisao_micro * Sensibilidade_micro) / (Precisao_micro + Sensibilidade_micro)
+
+resultados_modelo1 <- c(ACC, MCC_macro, MCC_micro, Sensibilidade_macro, Sensibilidade_micro, Especificidade_micro, Especificidade_macro, Acuracia_balanceada_macro, Acuracia_balanceada_micro, Precisao_micro, Precisao_macro, F1_micro, F1_macro)
+
+```
+
+
+### Holdout 70/30
+
+```{r, include=FALSE}
+set.seed(31415)
+l <- sample(1:nrow(treino),0.7*nrow(treino))
+amostra.trein7030 <- treino[l,]
+amostra.teste <- treino[-l,]
+
+mod.2nn7030 <- kknn(Y ~ ., kernel="gaussian", k=5, 
+                train = amostra.trein7030, test = amostra.teste)
+
+yfit7030 <- round(fitted(mod.2nn7030),0)
+
+#Confusion Matrix
+CM <- table(yfit7030,amostra.teste$Y)
+
+ind.cm=combn(4,2)
+
+CM1=CM[ind.cm[,1],ind.cm[,1]]
+CM2=CM[ind.cm[,2],ind.cm[,2]]
+CM3=CM[ind.cm[,3],ind.cm[,3]]
+CM4=CM[ind.cm[,4],ind.cm[,4]]
+
+TP1=CM1[1,1]
+FP1=CM1[2,1]
+TN1=CM1[2,2]
+FN1=CM1[1,2]
+
+
+TP2=CM2[1,1]
+FP2=CM2[2,1]
+TN2=CM2[2,2]
+FN2=CM2[1,2]
+
+TP3=CM3[1,1]
+FP3=CM3[2,1]
+TN3=CM3[2,2]
+FN3=CM3[1,2]
+
+TP4=CM4[1,1]
+FP4=CM4[2,1]
+TN4=CM4[2,2]
+FN4=CM4[1,2]
+
+#ACC
+ACC <- sum(diag(CM))/sum(CM)
+
+#MCC
+MCC1 <- (TP1*TN1-FP1*FN1)/sqrt(exp(log(TP1+FP1) + log(TP1+FN1) + log(TN1+FP1) + log(TN1+FN1)))
+MCC2 <- (TP2*TN2-FP2*FN2)/sqrt(exp(log(TP2+FP2) + log(TP2+FN2) + log(TN2+FP2) + log(TN2+FN2)))
+MCC3 <- (TP3*TN3-FP3*FN3)/sqrt(exp(log(TP3+FP3) + log(TP3+FN3) + log(TN3+FP3) + log(TN3+FN3)))
+MCC4 <- (TP4*TN4-FP4*FN4)/sqrt(exp(log(TP4+FP4) + log(TP4+FN4) + log(TN4+FP4) + log(TN4+FN4)))
+
+MCC_macro=mean(MCC1,MCC2,MCC3, MCC4)
+
+MCC_micro=((TP1+TP2+TP3+TP4)*(TN1+TN2+TN3+TN4)-(FP1+FP2+FP3+FP4)*(FN1+FN2+FN3+FN4))/sqrt(exp(log(TP1+TP2+TP3+TP4+FP1+FP2+FP3+FP4)+log(TP1+TP2+TP3+TP4+FN1+FN2+FN3+FN4)+log(TN1+TN2+TN3+TN4+FP1+FP2+FP3+FP4)+log(TN1+TN2+TN3+TN4+FN1+FN2+FN3+FN4)))
+
+# Sensibilidade Macro
+Sensibilidade_macro <- (TP1/(TP1 + FN1)) + (TP2/(TP2 + FN2)) + (TP3/(TP3 + FN3)) + (TP4/(TP4 + FN4))
+Sensibilidade_macro <- Sensibilidade_macro / 4
+
+# Sensibilidade Micro
+Sensibilidade_micro <- (TP1 + TP2 + TP3 + TP4) / (TP1 + TP2 + TP3 + TP4 + FN1 + FN2 + FN3 + FN4)
+
+# Especificidade Macro
+Especificidade_macro <- ((TN1/(TN1 + FP1)) + (TN2/(TN2 + FP2)) + (TN3/(TN3 + FP3)) + (TN4/(TN4 + FP4)))/ 4
+
+
+# Especificidade Micro
+Especificidade_micro <- (TN1 + TN2 + TN3 + TN4) / (TN1 + TN2 + TN3 + TN4 + FP1 + FP2 + FP3 + FP4)
+
+# Acurácia Balanceada Macro
+Acuracia_balanceada_macro <- (Sensibilidade_macro + Especificidade_macro) / 2
+
+# Acurácia Balanceada Micro
+Acuracia_balanceada_micro <- (Sensibilidade_micro + Especificidade_micro) / 2
+
+# Precisão Macro
+Precisao_macro <- (TP1/(TP1 + FP1)) + (TP2/(TP2 + FP2)) + (TP3/(TP3 + FP3)) + (TP4/(TP4 + FP4))
+Precisao_macro <- Precisao_macro / 4
+
+# Precisão Micro
+Precisao_micro <- (TP1 + TP2 + TP3 + TP4) / (TP1 + TP2 + TP3 + TP4 + FP1 + FP2 + FP3 + FP4)
+
+# F1 Score Macro
+F1_macro <- (2 * Precisao_macro * Sensibilidade_macro) / (Precisao_macro + Sensibilidade_macro)
+
+# F1 Score Micro
+F1_micro <- (2 * Precisao_micro * Sensibilidade_micro) / (Precisao_micro + Sensibilidade_micro)
+
+resultados_modelo2 <- c(ACC, MCC_macro, MCC_micro, Sensibilidade_macro, Sensibilidade_micro, Especificidade_micro, Especificidade_macro, Acuracia_balanceada_macro, Acuracia_balanceada_micro, Precisao_micro, Precisao_macro, F1_micro, F1_macro)
+
+```
+ 
+
+
+```{r}
+
+
+# Nomes das medidas
+nomes_medidas <- c("ACC", "MCC_macro", "MCC_micro", "Sensibilidade_macro", "Sensibilidade_micro", "Especificidade_micro", "Especificidade_macro", "Acuracia_balanceada_macro", "Acuracia_balanceada_micro", "Precisao_micro", "Precisao_macro", "F1_micro", "F1_macro")
+
+# Criar um data frame com os resultados
+df_resultados <- data.frame(Holdout5050 = resultados_modelo1, Holdout7030 = resultados_modelo2, row.names = nomes_medidas)
+
+# Mostrar a tabela
+print(df_resultados)
+
+```
+
+# Fronteiras de decisão
+
+```{r}
+# Criar uma grade de pontos com todas as combinações possíveis de X1 e X2
+x1 <- seq(min(treino$X1), max(treino$X1), length.out = 100)
+x2 <- seq(min(treino$X2), max(treino$X2), length.out = 100)
+
+grid <- data.frame(expand.grid(X1 = x1, X2 = x2))
+
+# Prever as classes para cada ponto na grade
+
+set.seed(31415)
+
+mod.2nn5050 <- kknn(Y ~ ., kernel="gaussian", k=1, 
+                train = amostra.trein5050, test = grid)
+
+yfit5050 <- round(fitted(mod.2nn5050),0)
+
+set.seed(31415)
+mod.2nn7030 <- kknn(Y ~ ., kernel="gaussian", k=1, 
+                train = amostra.trein7030, test = grid)
+
+yfit7030 <- round(fitted(mod.2nn7030),0)
+
+grid$Pred5050 <- round(yfit5050, 0)
+grid$Pred7030 <- round(yfit7030, 0)
+
+
+# Plotar os pontos da grade com cores relacionadas às previsões do modelo
+
+par(mfrow = c(1,2))
+plot(grid$X1, grid$X2, col = adjustcolor(cores[grid$Pred5050], alpha.f = 0.1), pch = 20, xlab = "X1", ylab = "X2", main = '5050')
+points(treino$X1, treino$X2, col = adjustcolor(cores[grid$Pred5050 + 1], alpha.f = 0.25), pch = 19)
+
+plot(grid$X1, grid$X2, col = adjustcolor(cores[grid$Pred7030], alpha.f = 0.1), pch = 20, xlab = "X1", ylab = "X2", main = '70/30')
+points(treino$X1, treino$X2, col = adjustcolor(cores[grid$Pred7030 + 1], alpha.f = 0.25), pch = 19)
+
+
+# Adicionar os pontos de treinamento originais
+
+
+```
+
+
